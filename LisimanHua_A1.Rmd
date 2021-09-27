@@ -1,5 +1,5 @@
 ---
-title: "Assignment 1"
+title: "218X Assignment 1"
 author: "Lisiman Hua"
 date: "9/27/2021"
 output: html_document
@@ -11,17 +11,251 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Create bar or line charts showing monthly total kBTUs of residential and commercial electricity and gas consumption for the entire PG&E territory (meaning all ZIP codes in your downloaded files) from January 2017 to the latest available month (meaning a 54-item version of the plots from Chapter 1.8). Look online for the correct conversion of kWhs to kBTUs and therms to kBTUs. Plot residential and commercial trends on separate charts, but each chart should distinguish electricity and gas consumption with different colors. Comment on any observable changes in energy consumption that may be attributable to the COVID-19 pandemic (you are encouraged to create additional plots that help emphasize the change between 2019 and 2020). Explain any key assumptions you made in the analysis, or caveats about the data sources that you think the reader should be aware of. Publish all of this work in a GitHub webpage titled “yourname_A1” (using the steps from Chapter 1.4). For this assignment, a support script is available by request from the TAs (after you have demonstrated initial effort).
 
+First loop through the electricity usage from 2017-2020
 ```{r}
-library(ggplot2)
 library(tidyverse)
+
+years <- 2017:2020
+quarters <- 1:4
+type <- "Electric"
+
+pge_elec <- NULL
+
+for(year in years) {
+  
+  for(quarter in quarters){
+  
+    filename <- 
+      paste0(
+        "pge/PGE_",
+        year,
+        "_Q",
+        quarter,
+        "_",
+        type,
+        "UsageByZip.csv"
+      )
+
+    print(filename)
+  
+    temp <- read_csv(filename)
+  
+  pge_elec <- rbind(pge_elec,temp)
+  # Note rbind requires field names to be consistent for every new thing that you add.
+
+  saveRDS(pge_elec, "pge_elec.rds")
+  }
+}
+```
+Then add the electricity usage for the first 2 quarters of 2021
+```{r}
+year <- 2021
+quarters <- 1:2
+type <- "Electric"
+
+for(quarter in quarters) {
+  
+  filename <- 
+    paste0(
+      "pge/PGE_",
+      year,
+      "_Q",
+      quarter,
+      "_",
+      type,
+      "UsageByZip.csv"
+    )
+
+  print(filename)
+  
+  temp <- read_csv(filename)
+  
+  pge_elec <- rbind(pge_elec,temp)
+  # Note rbind requires field names to be consistent for every new thing that you add.
+
+  saveRDS(pge_elec, "pge_elec.rds")
+}
+```
+Filter to get only residential and commercial usage for electricity
+```{r}
+pge_elec_filter <- 
+  filter(
+    pge_elec,
+    CUSTOMERCLASS %in% 
+      c(
+        "Elec- Residential",
+        "Elec- Commercial"
+      )
+  )
+```
+Convert kWhs to kBTUs
+```{r}
+pge_elec_filter<-within(pge_elec_filter,kBTUs<-TOTALKWH*3412.14)
+```
+delete unwanted columns
+```{r}
+pge_elec_filter2 <- pge_elec_filter[,-c(7,8)]
 ```
 
-## Including Plots
+Then repeat the above steps for gas usage
+```{r}
+years <- 2017:2020
+quarters <- 1:4
+type <- "Gas"
 
-You can also embed plots, for example:
+pge_gas <- NULL
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+for(year in years) {
+  
+  for(quarter in quarters){
+  
+    filename <- 
+      paste0(
+        "pge/PGE_",
+        year,
+        "_Q",
+        quarter,
+        "_",
+        type,
+        "UsageByZip.csv"
+      )
+
+    print(filename)
+  
+    temp <- read_csv(filename)
+  
+  pge_gas <- rbind(pge_gas,temp)
+  # Note rbind requires field names to be consistent for every new thing that you add.
+
+  saveRDS(pge_gas, "pge_elec.rds")
+  }
+}
+```
+```{r}
+year <- 2021
+quarters <- 1:2
+type <- "Gas"
+
+for(quarter in quarters) {
+  
+  filename <- 
+    paste0(
+      "pge/PGE_",
+      year,
+      "_Q",
+      quarter,
+      "_",
+      type,
+      "UsageByZip.csv"
+    )
+
+  print(filename)
+  
+  temp <- read_csv(filename)
+  
+  pge_gas <- rbind(pge_gas,temp)
+  # Note rbind requires field names to be consistent for every new thing that you add.
+
+  saveRDS(pge_gas, "pge_gas.rds")
+}
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+pge_gas_filter <- 
+  filter(
+    pge_gas,
+    CUSTOMERCLASS %in% 
+      c(
+        "Gas- Residential",
+        "Gas- Commercial"
+      )
+  )
+```
+
+```{r}
+pge_gas_filter<-within(pge_gas_filter,kBTUs<-TOTALTHM*100000)
+```
+
+```{r}
+pge_gas_filter2 <- pge_gas_filter[,-c(7,8)]
+```
+Combine the electricity usage and gas usage
+```{r}
+pge_final<-rbind(pge_elec_filter2,pge_gas_filter2)
+```
+separate each month by year  
+```{r}
+pge_mutate<-
+  mutate(pge_final,
+      DATE = 
+        paste(
+          YEAR,
+          MONTH, 
+          "01",
+          sep="-"
+        ) %>% as.Date()
+  )
+```
+separate residential and commercial usage
+```{r}
+pge_commercial<-filter(pge_mutate,CUSTOMERCLASS%in% 
+      c(
+        "Elec- Commercial",
+        "Gas- Commercial"
+      ))
+pge_residential<- filter(pge_mutate,CUSTOMERCLASS%in% 
+      c(
+        "Elec- Residential",
+        "Gas- Residential"
+      ))
+```
+
+```{r}
+library(plotly)
+```
+Plot (dropping overlapping x axis labels)
+```{r}
+pge_chart_residential <-
+  pge_residential %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = DATE %>% factor(),
+      y = kBTUs,
+      fill = CUSTOMERCLASS
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    x = "Months",
+    y = "kBTUs",
+    title = "PG&E Territory Monthly Residential Electricity and Gas Usage, 2017-2021 Q2",
+    fill = "Usage Type"
+  ) +
+  scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+pge_chart_residential
+```
+```{r}
+pge_chart_commercial <-
+  pge_commercial %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = DATE %>% factor(),
+      y = kBTUs,
+      fill = CUSTOMERCLASS
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    x = "Months",
+    y = "kBTUs",
+    title = "PG&E Territory Monthly Commercial Electricity and Gas Usage, 2017-2021 Q2",
+    fill = "Usage Type"
+  ) +
+  scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+pge_chart_commercial
+```
+According to the plots, there is one month with abnormally high commercial electricity usage that can cause caveat. Other than that, we can see an overall trend that gas usage for both commercial and residential is higher during the winter and lower during the summer, maybe due to high demand for heating during the winter.  
