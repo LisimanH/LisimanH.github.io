@@ -230,7 +230,7 @@ pge_chart_residential <-
   labs(
     x = "Months",
     y = "kBTUs",
-    title = "PG&E Territory Monthly Residential Electricity and Gas Usage, 2017-2021 Q2",
+    title = "PG&E Territory Monthly Residential Electricity and Gas Usage\n2017 Q1 - 2021 Q2",
     fill = "Usage Type"
   ) +
   scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
@@ -252,10 +252,11 @@ pge_chart_commercial <-
   labs(
     x = "Months",
     y = "kBTUs",
-    title = "PG&E Territory Monthly Commercial Electricity and Gas Usage, 2017-2021 Q2",
+    title = "PG&E Territory Monthly Commercial Electricity and Gas Usage\n2017 Q1 - 2021 Q2",
     fill = "Usage Type"
   ) +
   scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
 pge_chart_commercial
 ```
-According to the plots, there is one month with abnormally high commercial electricity usage that can cause caveat. Other than that, we can see an overall trend that gas usage for both commercial and residential is higher during the winter and lower during the summer, maybe due to high demand for heating during the winter.  
+
+According to the plots, there is one month with abnormally high commercial electricity usage that can cause caveat. Other than that, we can see an overall trend that gas usage for both commercial and residential is higher during the winter and lower during the summer, maybe due to high demand for heating during the winter. One potential COVID-induced change is that starting from the second quarter of 2020, there is a noticeable decrease in the commercial power use. The total gas and electricity usage is lower than the same months from previous years. It might be caused by the COVID related quarantine and many companies/factories stopped working for a period of time. After the quarantine was over, the power usage went back to normal.    
