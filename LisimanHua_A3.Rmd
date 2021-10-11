@@ -1,0 +1,144 @@
+---
+title: "assignment 3"
+author: "Lisiman Hua"
+date: "10/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warnings = F, messages = F)
+```
+
+```{r }
+library(censusapi)
+library(tidyverse)
+library(tigris)
+library(sf)
+library(leaflet)
+
+Sys.setenv(CENSUS_KEY="5042355b73b371569968738cfc4f492be94675c1")
+```
+
+```{r}
+pums_2019_1yr <- getCensus(
+  name = "acs/acs1/pums",
+  vintage = 2019,
+  region = "public use microdata area:*", 
+  regionin = "state:06",
+  vars = c(
+    "SERIALNO",
+    "REFR", #fridge
+    "RWAT", #running water
+    "FINCP", #family income
+    "GRPIP", #Gross rent as a percentage of household income past 12 months
+    "SPORDER",
+    "WGTP",# weight
+    "DDRS", #self-care difficulty
+    "HINCP", #household income
+    "TEN" #tenure
+  )
+)
+```
+
+```{r}
+ca_pumas <-
+  pumas("CA", cb = T, progress_bar = F)
+
+bay_county_names <-
+  c(
+    "Alameda",
+    "Contra Costa",
+    "Marin",
+    "Napa",
+    "San Francisco",
+    "San Mateo",
+    "Santa Clara",
+    "Solano",
+    "Sonoma"
+  )
+
+bay_counties <-
+  counties("CA", cb = T, progress_bar = F) %>%
+  filter(NAME %in% bay_county_names)
+
+bay_pumas <-
+  ca_pumas %>% 
+  st_centroid() %>% 
+  .[bay_counties, ] %>% 
+  st_drop_geometry() %>% 
+  left_join(ca_pumas %>% select(GEOID10)) %>% 
+  st_as_sf()
+
+bay_pums <-
+  pums_2019_1yr %>% 
+  mutate(
+    PUMA = str_pad(public_use_microdata_area,5,"left","0")
+  ) %>% 
+  filter(PUMA %in% bay_pumas$PUMACE10)
+```
+try to find household that either 
+1) has no fridge; 
+2) no running water; 
+3) spending more than 50% income in renting; 
+4) have self-care difficulty 
+```{r}
+bay_pums_example <-
+  bay_pums %>% 
+  filter(!duplicated(SERIALNO)) %>% 
+  mutate(
+    WGTP = as.numeric(WGTP),
+    at_risk_of_heat_impact = ifelse(
+      (REFR == 2) |
+        (RWAT == 2) |
+        (GRPIP > 50) |
+        (DDRS == 1),
+      WGTP,
+      0
+    )
+  ) %>% 
+  group_by(PUMA) %>% 
+  summarize(
+    total_at_risk_of_heat_impact =
+      sum(at_risk_of_heat_impact, na.rm =T)
+  ) %>% 
+  left_join(
+    bay_pumas %>% 
+      select(PUMACE10),
+    by = c("PUMA" = "PUMACE10")
+  ) %>% 
+  st_as_sf()
+```
+
+```{r}
+pums_pal <- colorNumeric(
+  palette = "Oranges",
+  domain = bay_pums_example$total_at_risk_of_heat_impact
+)
+
+leaflet() %>%
+  addTiles() %>% 
+  addPolygons(
+    data = bay_pums_example,
+    fillColor = ~pums_pal(total_at_risk_of_heat_impact),
+    color = "white",
+    opacity = 0.5,
+    fillOpacity = 0.5,
+    weight = 1,
+    label = ~paste0(
+      round(total_at_risk_of_heat_impact), 
+      " peope at risk of extreme heat impacts"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )
+  ) %>% 
+  addLegend(
+    data = bay_pums_example,
+    pal = pums_pal,
+    values = ~total_at_risk_of_heat_impact,
+    title = "people at risk of<br>extreme heat impacts"
+  )
+```
+
+Using the standard of having no fridge (so no ice), no running water, spending more than 50% of household income on renting, and having self-care difficulty, I have only included people that will be severely impacted by potential heat waves. There will be more people that is less vulnerable than the selected group but can still be impacted by heat wave.
