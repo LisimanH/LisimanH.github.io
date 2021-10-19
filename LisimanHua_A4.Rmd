@@ -1,0 +1,485 @@
+---
+title: "assignment 4"
+author: "Lisiman Hua"
+date: "10/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+```
+
+```{r}
+library(tidyverse)
+library(censusapi)
+Sys.setenv(CENSUS_KEY="5042355b73b371569968738cfc4f492be94675c1")
+
+
+acs_vars_2019_5yr <-
+  listCensusMetadata(
+    name = "2019/acs/acs5",
+    type = "variables"
+  )
+```
+try white only first
+```{r}
+bay_education_white_2019 <- 
+  getCensus(
+  name = "acs/acs5",
+  vintage = 2019,
+  region = "county:001,013,041,055,075,081,085,095,097", 
+  regionin = "state:06",
+  vars = "group(C15002A)" #group()means you want to get all the variables in the table
+  )%>%
+  select(
+    ends_with("E")&-c(state, NAME)
+    ) %>%
+  summarize_all(sum) %>%
+  pivot_longer(
+    everything(),
+    names_to = "name",
+    values_to = "estimate"
+  ) %>%
+  left_join(
+    acs_vars_2019_5yr %>%
+      select(name,label)
+  ) %>%
+  separate(
+    label,
+    into = c(NA, NA, NA, "Educational_Attainment"),
+    sep = "!!"
+  ) %>%
+  select(-name) %>%
+  filter(!is.na(Educational_Attainment)) %>%
+  group_by(Educational_Attainment) %>%
+  summarise(estimate=sum(estimate)) %>%
+  mutate(race = "white alone")
+```
+loop through all the races
+```{r}
+race_categories <- c(
+  "White alone",
+  "Black or African American alone",
+  "American Indian and Alaska Native alone",
+  "Asian alone",
+  "Native Hawaiian and Other Pacific Islander alone",
+  "Some Other Race alone",
+  "Two or more Races"
+)
+
+bay_education_race_2019 <-
+  1:7 %>% 
+  map_dfr(function(x){
+     getCensus(
+  name = "acs/acs5",
+  vintage = 2019,
+  region = "county:001,013,041,055,075,081,085,095,097", 
+  regionin = "state:06",
+  vars = paste0("group(C15002",LETTERS[x],")") 
+  )%>%
+  select(
+    ends_with("E")&-c(state, NAME)
+    ) %>%
+  summarize_all(sum) %>%
+  pivot_longer(
+    everything(),
+    names_to = "name",
+    values_to = "estimate"
+  ) %>%
+  left_join(
+    acs_vars_2019_5yr %>%
+      select(name,label)
+  ) %>%
+  separate(
+    label,
+    into = c(NA, NA, NA, "Educational_Attainment"),
+    sep = "!!"
+  ) %>%
+  select(-name) %>%
+  filter(!is.na(Educational_Attainment)) %>%
+  group_by(Educational_Attainment) %>%
+  summarise(estimate=sum(estimate)) %>%
+  mutate(race = race_categories[x])
+  })
+
+```
+6 point graph
+```{r}
+bay_education_total_2019 <-
+  bay_education_race_2019 %>% 
+  group_by(race) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  mutate(Educational_Attainment = "Total")
+
+ordered_label <- c(
+  "Total",
+  "Less than high school diploma",
+  "High school graduate (includes equivalency)",
+  "Some college or associate's degree",
+  "Bachelor's degree or higher"
+)
+
+bay_education_race_2019 %>% 
+  group_by(Educational_Attainment, race) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  rbind(bay_education_total_2019) %>%
+  ggplot() +
+  geom_bar(
+    aes(
+      x = Educational_Attainment %>% 
+        factor(levels = c("Total",unique(bay_education_race_2019$Educational_Attainment))),
+      y = estimate,
+      fill = race %>% factor(levels = rev( unique(bay_education_race_2019$race)) )
+    ),
+    stat = "identity",
+    position = "fill"
+  ) +
+  labs(
+    x = "Educational Attainment",
+    y = "Proportion of population 25 years or older",
+    title = "Bay Area Educational Attainment by Race",
+    fill = "Race"
+  ) +
+  coord_flip() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "vertical"
+  )  +
+  scale_x_discrete(limits = rev(ordered_label)) +
+  guides(
+    fill = guide_legend(
+      reverse = T
+    )
+  )
+ 
+```
+Is there disproportionate education attainment by race in the county?
+
+According to the graph, the answer is yes. Among the bay area population of 25 years or older, there are noticeable differences in the educational attainment across races. There are proportionally less white people having education attainment that is either less than high school diploma or high school diploma equivalent. White people have proportionally more people getting some college/associate's degree or bachelor degree/higher. Black or African Americans have proportionally more people getting some college degree but less getting bachelor degree or higher. Asians have proportionally less people getting high school diploma equivalent but more getting bachelor's degree or higher. Some other race alone category have proportionally more people getting education that is either less than high school diploma or high school diploma equivalent. There are proportionally less of them getting bachelor's degree or higher. Other races in general shares only small percentage of the population and can be harder to read from the graph.
+
+Next try to make a graph that is similar but use ethnicity instead of race.
+Three categories for ethnicity should be “Latinx”, “White, not Latinx”, and “Not White, not Latinx”
+```{r}
+bay_education_white_not_latinx_2019 <- 
+  getCensus(
+  name = "acs/acs5",
+  vintage = 2019,
+  region = "county:001,013,041,055,075,081,085,095,097", 
+  regionin = "state:06",
+  vars = "group(C15002H)" #group()means you want to get all the variables in the table
+  )%>%
+  select(
+    ends_with("E")&-c(state, NAME)
+    ) %>%
+  summarize_all(sum) %>%
+  pivot_longer(
+    everything(),
+    names_to = "name",
+    values_to = "estimate"
+  ) %>%
+  left_join(
+    acs_vars_2019_5yr %>%
+      select(name,label)
+  ) %>%
+  separate(
+    label,
+    into = c(NA, NA, NA, "Educational_Attainment"),
+    sep = "!!"
+  ) %>%
+  select(-name) %>%
+  filter(!is.na(Educational_Attainment)) %>%
+  group_by(Educational_Attainment) %>%
+  summarise(estimate=sum(estimate)) %>%
+  mutate(ethnicity = "white, not latinx")
+```
+
+```{r}
+bay_education_latinx_2019 <- 
+  getCensus(
+  name = "acs/acs5",
+  vintage = 2019,
+  region = "county:001,013,041,055,075,081,085,095,097", 
+  regionin = "state:06",
+  vars = "group(C15002I)" #group()means you want to get all the variables in the table
+  )%>%
+  select(
+    ends_with("E")&-c(state, NAME)
+    ) %>%
+  summarize_all(sum) %>%
+  pivot_longer(
+    everything(),
+    names_to = "name",
+    values_to = "estimate"
+  ) %>%
+  left_join(
+    acs_vars_2019_5yr %>%
+      select(name,label)
+  ) %>%
+  separate(
+    label,
+    into = c(NA, NA, NA, "Educational_Attainment"),
+    sep = "!!"
+  ) %>%
+  select(-name) %>%
+  filter(!is.na(Educational_Attainment)) %>%
+  group_by(Educational_Attainment) %>%
+  summarise(estimate=sum(estimate)) %>%
+  mutate(ethnicity = "latinx")
+```
+
+```{r}
+bay_education_total_2019 <-
+  bay_education_race_2019 %>% 
+  group_by(Educational_Attainment) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  mutate(ethnicity = "Total")
+
+bay_education_not_white_not_latinx_2019 <-
+  bay_education_total_2019 %>%
+  mutate(
+    estimate = bay_education_total_2019$estimate -
+      bay_education_latinx_2019$estimate -
+      bay_education_white_not_latinx_2019$estimate) %>%
+  mutate(ethnicity = "not white, not latinx")
+
+# combine everything into one table
+bay_education_ethnicity_2019 <-
+  bay_education_latinx_2019 %>%
+  rbind(bay_education_white_not_latinx_2019, bay_education_not_white_not_latinx_2019)
+```
+
+new graph by ethnicity
+```{r}
+bay_education_total_2019 <-
+  bay_education_ethnicity_2019 %>% 
+  group_by(ethnicity) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  mutate(Educational_Attainment = "Total")
+
+bay_education_ethnicity_2019 %>% 
+  group_by(Educational_Attainment, ethnicity) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  rbind(bay_education_total_2019)%>%
+  ggplot() +
+  geom_bar(
+    aes(
+      x = Educational_Attainment %>% 
+        factor(levels = c("Total",unique(bay_education_ethnicity_2019$Educational_Attainment))),
+      y = estimate,
+      fill = ethnicity %>% factor(levels = rev( unique(bay_education_ethnicity_2019$ethnicity)) )
+    ),
+    stat = "identity",
+    position = "fill"
+  ) +
+  labs(
+    x = "Educational Attainment",
+    y = "Proportion of population 25 years or older",
+    title = "Bay Area Educational Attainment by Ethnicity",
+    fill = "Ethnicity"
+  ) +
+  coord_flip() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "vertical"
+  )  +
+  scale_x_discrete(limits = rev(ordered_label)) +
+  guides(
+    fill = guide_legend(
+      reverse = T
+    )
+  )
+```
+According to this graph, among the bay population of 25 years or older, there are proportionally more Latinx getting education that is either less than high school diploma or high school diploma equivalent and proportionally less getting bachelor's degree or higher. On the reverse, for the group of "white, not latinx," there are proportionally less of them getting education that is less than high school diploma or high school equivalent and proportionally more of them getting bachelor's degree and higher. The proportional differences between total and each educational attainment category for not white and not latinx group are not that much. 
+
+```{r}
+bay_county_num <- c("001","013","041","055","075","081","085","095","097") 
+years <- c(2006:2019)
+bay_education_white_not_latinx_2006to2019 <- NULL
+for(x in years){
+  acs_vars_1yr_x <-
+  listCensusMetadata(
+    name = paste0(x,"/acs/acs1"),
+    type = "variables"
+    )
+  for (y in bay_county_num){
+    temp<-
+      getCensus(
+      name = "acs/acs1",
+      vintage = x,
+      region = paste0("county:", y), 
+      regionin = "state:06",
+      vars = "group(C15002H)" 
+      ) %>%
+      select(
+        ends_with("E")&-c(state, NAME)
+        ) %>%
+      summarize_all(sum) %>%
+      pivot_longer(
+        everything(),
+        names_to = "name",
+        values_to = "estimate"
+      ) %>%
+      left_join(
+        acs_vars_1yr_x %>%
+          select(name,label)
+      ) %>%
+      separate(
+        label,
+        into = c(NA, NA, NA, "Educational_Attainment"),
+        sep = "!!"
+      ) %>%
+      select(-name) %>%
+      filter(!is.na(Educational_Attainment)) %>%
+      group_by(Educational_Attainment) %>%
+      summarise(estimate=sum(estimate)) %>%
+      mutate(ethnicity = "white, not latinx") %>%
+      mutate(year = x) %>%
+      mutate(county = y)
+    bay_education_white_not_latinx_2006to2019 <-
+      rbind(bay_education_white_not_latinx_2006to2019,temp)
+}}
+```
+
+```{r}
+bay_education_latinx_2006to2019 <- NULL
+for(x in years){
+  acs_vars_1yr_x <-
+  listCensusMetadata(
+    name = paste0(x,"/acs/acs1"),
+    type = "variables"
+    )
+  for (y in bay_county_num){
+    temp<-
+      getCensus(
+      name = "acs/acs1",
+      vintage = x,
+      region = paste0("county:", y), 
+      regionin = "state:06",
+      vars = "group(C15002I)" 
+      ) %>%
+      select(
+        ends_with("E")&-c(state, NAME)
+        ) %>%
+      summarize_all(sum) %>%
+      pivot_longer(
+        everything(),
+        names_to = "name",
+        values_to = "estimate"
+      ) %>%
+      left_join(
+        acs_vars_1yr_x %>%
+          select(name,label)
+      ) %>%
+      separate(
+        label,
+        into = c(NA, NA, NA, "Educational_Attainment"),
+        sep = "!!"
+      ) %>%
+      select(-name) %>%
+      filter(!is.na(Educational_Attainment)) %>%
+      group_by(Educational_Attainment) %>%
+      summarise(estimate=sum(estimate)) %>%
+      mutate(ethnicity = "latinx") %>%
+      mutate(year = x) %>%
+      mutate(county = y)
+    bay_education_latinx_2006to2019 <-
+      rbind(bay_education_latinx_2006to2019,temp)
+}}
+```
+
+```{r}
+bay_education_2006to2019 <- NULL
+for(x in years){
+  acs_vars_1yr_x <-
+  listCensusMetadata(
+    name = paste0(x,"/acs/acs1"),
+    type = "variables"
+    )
+  for(y in bay_county_num){
+    for(i in 1:7){
+      temp<-
+    getCensus(
+    name = "acs/acs1",
+    vintage = x,
+    region = paste0("county:", y), 
+    regionin = "state:06",
+    vars = paste0("group(C15002",LETTERS[i],")") 
+    )%>%
+    select(
+      ends_with("E")&-c(state, NAME)
+      ) %>%
+    summarize_all(sum) %>%
+    pivot_longer(
+      everything(),
+      names_to = "name",
+      values_to = "estimate"
+    ) %>%
+    left_join(
+      acs_vars_1yr_x %>%
+        select(name,label)
+    ) %>%
+    separate(
+      label,
+      into = c(NA, NA, NA, "Educational_Attainment"),
+      sep = "!!"
+    ) %>%
+    select(-name) %>%
+    filter(!is.na(Educational_Attainment)) %>%
+    mutate(year = x) %>%
+    mutate(county = y) %>%
+    group_by(Educational_Attainment,year,county) %>%
+    summarise(estimate=sum(estimate))
+      
+    bay_education_2006to2019 <-
+      rbind(bay_education_2006to2019,temp)
+    }}
+}
+```
+
+```{r}
+bay_education_2006to2019<-
+  bay_education_2006to2019 %>%
+  filter(!is.na(estimate))%>%
+  group_by(Educational_Attainment,year,county) %>%
+    summarise(estimate=sum(estimate))
+
+year_county_total <-
+  bay_education_2006to2019 %>%
+  filter(!is.na(estimate))%>%
+  group_by(year,county) %>%
+  summarise(total=sum(estimate))
+
+no_college_year_county<-
+  bay_education_2006to2019 %>%
+  filter(Educational_Attainment=="Bachelor's degree or higher") %>%
+  merge(year_county_total,all=TRUE)%>%
+  mutate(total_no_college = total-estimate)%>%
+  select(!c(Educational_Attainment,estimate,total))%>%
+  filter(!is.na(total_no_college))
+  
+latinx_year_county_total <-
+  bay_education_latinx_2006to2019 %>%
+  filter(!is.na(estimate))%>%
+  group_by(year,county) %>%
+  summarise(total_latinx=sum(estimate))
+
+latinx_no_college_year_county<-
+  bay_education_latinx_2006to2019 %>%
+  filter(Educational_Attainment=="Bachelor's degree or higher")%>%
+  merge(latinx_year_county_total,all=TRUE)%>%
+  mutate(total_latinx_no_college = total_latinx-estimate)%>%
+  select(!c(Educational_Attainment,estimate,ethnicity))%>%
+  filter(!is.na(total_latinx_no_college))%>%
+  merge(no_college_year_county,all=TRUE)%>%
+  mutate(percent_latinx_no_college=total_latinx_no_college/total_no_college)%>%
+  merge(year_county_total,all=TRUE)%>%
+  mutate(percent_latinx= total_latinx/total)%>%
+  mutate(percent_over_present=percent_latinx_no_college-percent_latinx)
+```
+
+```{r}
+ggplot(latinx_no_college_year_county, 
+       aes(x=year, y=percent_over_present, color=county)) +
+  geom_line()
+```
+I gave it a try but I think it is different from the expected numbers and I cannot figure out why. 
