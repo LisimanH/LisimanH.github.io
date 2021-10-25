@@ -1,0 +1,156 @@
+---
+title: "A5"
+author: "Lisiman Hua"
+date: "10/25/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+```
+
+```{r}
+library(tidyverse)
+library(censusapi)
+library(sf)
+library(tigris)
+library(mapview)
+library(leaflet)
+
+library(readxl)
+
+temp <- tempfile()
+download.file("https://oehha.ca.gov/media/downloads/calenviroscreen/document/calenviroscreen40resultsdatadictionaryf2021.zip",destfile = temp)
+
+# for Mac Users, put the xlsx file in your working directory
+ces4 <- read_excel("calenviroscreen40resultsdatadictionary_F_2021.xlsx")
+
+colnames(ces4)
+
+ces4_clean <- ces4 %>% 
+  dplyr::select(!ends_with("Pctl")) %>%
+  filter(`California County`=="Santa Clara")
+
+sum(is.na(ces4_clean$Poverty))
+
+ces4_clean %>% 
+  # .$Poverty %>%
+  pull(Poverty) %>% 
+  is.na() %>% 
+  sum()
+
+ca_tracts <- tracts("CA")
+
+ces4_map <- ces4_clean %>% 
+  left_join(
+    ca_tracts %>% 
+      transmute(GEOID = GEOID %>% as.numeric()),
+    by = c("Census Tract" = "GEOID")
+  ) %>% 
+  st_as_sf() #needed when starts with a non-spatial object and joined to get spatial data
+```
+Data is reduced to contain only Santa Clara data to avoid knitting problem. Map of PM2.5 shows the annual mean PM2.5 concentrations based on 2019 ACS population estimates in census tracts
+```{r}
+pm25_pal <- colorNumeric(
+  palette = "Reds",
+  domain = ces4_map$PM2.5
+)
+
+leaflet() %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(
+    data = ces4_map,
+    fillColor = ~pm25_pal(PM2.5),
+    color = "white",
+    weight = 0.5,
+    fillOpacity = 0.5,
+    label = ~PM2.5
+  )
+```
+Map of Asthma shows the age-adjusted rate of emergency department visits for asthma
+```{r}
+asthma_pal <- colorNumeric(
+  palette = "Blues",
+  domain = ces4_map$Asthma
+)
+
+leaflet() %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(
+    data = ces4_map,
+    fillColor = ~asthma_pal(Asthma),
+    color = "white",
+    weight = 0.5,
+    fillOpacity = 0.5,
+    label = ~Asthma
+  )
+```
+
+```{r}
+ggplot(
+  data = ces4_map,
+  aes(
+      x = PM2.5,
+      y = Asthma
+    )
+) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+The fitted line seems to fit most of the points, but on the upper half of the plot, there are points showing high asthma-caused emergency department visits that are not as related to PM2.5 concentration.
+```{r}
+model <- lm(Asthma~PM2.5, data = ces4_map)
+summary(model)
+```
+
+An increase of 1 unit in PM2.5 concentration is associated with an increase of 10.218 asthma-caused emergency room visit; 
+7.5% of the variation in Asthma is explained by the variation in PM2.5
+
+```{r}
+plot(density(residuals(model)))
+```
+The residual plot is significantly skewed to the left, maybe a curve would fit better than a straight line.
+
+Try the log transformation to solve the skewness problem.
+```{r}
+ggplot(
+  data = ces4_map,
+  aes(
+      x = PM2.5,
+      y = log(Asthma)
+    )
+) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+the fitted line looks better than the previous one.
+```{r}
+log_model <-lm(log(Asthma)~PM2.5, data = ces4_map)
+summary(log_model)
+```
+Now we can interpret that with with 1% increase in PM2.5 concentration, the age-adjusted asthma-caused emergence room visit will increase by about 29%. 6.8% of the percent variation in Asthma is explained by the variation in PM2.5
+```{r}
+plot(density(residuals(log_model)))
+```
+Now the skewness problem is solved, it looks more like a normal distribution around 0.
+
+```{r}
+res_pal <- colorNumeric(
+  palette = "RdBu",
+  domain = residuals(log_model)
+)
+
+leaflet() %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(
+    data = ces4_map,
+    fillColor = ~res_pal(residuals(log_model)),
+    color = "white",
+    weight = 0.5,
+    fillOpacity = 0.5,
+    label = ~residuals(log_model)
+  )
+```
+Here the blue are the positive residuals and red are negative residuals. The most negative residuals is around Stanford University with a -1.7 residual. Negative residuals means that there is an over-estimation in Asthma estimation.
+My guess is that there are mainly students living in the area. Students in general are younger and healthier and potentially has no money to go to emergency room if not desperately needed to.
+
