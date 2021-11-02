@@ -1,0 +1,135 @@
+---
+title: "A6"
+author: "Lisiman Hua"
+date: "10/26/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+```
+
+```{r}
+library(censusapi)
+library(tidyverse)
+library(tigris)
+library(sf)
+library(leaflet)
+library(mapview)
+
+Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
+
+ pums_2019_1yr <- getCensus(
+   name = "acs/acs1/pums",
+   vintage = 2019,
+   region = "public use microdata area:*",
+   regionin = "state:06",
+   vars = c(
+     "SERIALNO",
+     "SPORDER",
+     "PWGTP",
+     "WGTP",
+     "YBL",
+     "BLD",
+     "TEN",
+     "MV",
+     "HINCP",
+     "AGEP"
+   )
+ )
+ saveRDS(pums_2019_1yr, "a6_pums.rds")
+# pums_2019_1yr <- readRDS("a6_pums.rds")
+
+ca_pumas <-
+  pumas("CA", cb = T, progress_bar = F)
+
+sf_boundary <-
+  counties("CA", cb = T, progress_bar = F) %>%
+  filter(NAME == "San Francisco")
+
+sf_pumas <-
+  ca_pumas %>% 
+  st_centroid() %>% 
+  .[sf_boundary, ] %>% 
+  st_drop_geometry() %>% 
+  left_join(ca_pumas %>% select(GEOID10)) %>% 
+  st_as_sf()
+saveRDS(pums_2019_1yr,"a6_pums.rds")
+#pums_2019_1yr<-readRDS("a6_pums.rds")
+```
+three strange geographic anomalies are shown in the map:
+```{r}
+mapview(sf_pumas)
+```
+```{r}
+sf_pums<- pums_2019_1yr %>%
+  mutate(
+    PUMA = str_pad(public_use_microdata_area, 5, "left", 0)
+  ) %>%
+  filter(PUMA %in% sf_pumas$PUMACE10)
+
+sf_pums_clean <- sf_pums %>% 
+  filter(YBL %in% as.character(1:3)) %>% # built before 1960
+  mutate(YBL = as.numeric(YBL)) %>% #year built
+  mutate(AGEP = as.numeric(AGEP)) %>% #age
+  mutate(HINCP = as.numeric(HINCP)) %>% #household income
+ # only one row per SERIALNO
+  group_by(SERIALNO) %>%
+  arrange(AGEP) %>% #sort a variable in descending order
+  summarize_all(first) %>%
+  mutate(leadrisk = ifelse(AGEP <= 6 & HINCP <= 90000, 1,0) )
+ 
+
+test <- sf_pums_clean %>% filter(SERIALNO == "2019HU0000927")
+```
+
+Logistic model is built to predict the leadrisk
+```{r}
+sf_pums_lead_risk <- sf_pums_clean %>% 
+  mutate(
+      factor(
+        BLD, levels = sf_pums_clean$BLD %>% 
+          unique() %>%
+          as.numeric() %>% 
+          sort()
+      ),
+      factor(
+        TEN, levels = sf_pums_clean$TEN %>% 
+          unique() %>%
+          as.numeric() %>% 
+          sort()
+      ),
+      factor(
+        MV, levels = sf_pums_clean$MV %>% 
+          unique() %>%
+          as.numeric() %>% 
+          sort()
+      ),
+      factor(
+        PUMA, levels = sf_pums_clean$PUMA %>% 
+          unique() %>%
+          as.numeric() %>% 
+          sort()
+      )
+  )
+
+logit_model <- glm(
+  leadrisk ~ BLD + TEN + MV + PUMA,
+  family = quasibinomial(),
+  data = sf_pums_lead_risk
+)
+
+summary(logit_model)
+
+```
+```{r}
+sample_predict <- sample_n(sf_pums_lead_risk,1)
+print(paste("The actual leadrisk:", sample_predict$leadrisk))
+print("the predicted leadrisk:")
+predict(logit_model, sample_predict, type = "response")
+```
+
+```{r}
+sf_pums_lead_risk <- sf_pums_lead_risk %>%
+  mutate(full_predict = predict(logit_model, sf_pums_lead_risk, type = "response"))
+```
