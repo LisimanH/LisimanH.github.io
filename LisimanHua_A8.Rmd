@@ -228,7 +228,7 @@ rbind(
   geom_line() +
   geom_vline(xintercept = 2018, linetype = "dashed") +
   labs(
-    title = "Milpitas vs. control neighborhoods, BART ridership",
+    title = "Antioch vs. control neighborhoods, BART ridership",
     x = "Year",
     y = "BART commute riders"
   )
