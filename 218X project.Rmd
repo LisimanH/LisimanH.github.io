@@ -1,0 +1,64 @@
+---
+title: "project"
+author: "Lisiman Hua"
+date: "11/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(censusapi)
+library(tidyverse)
+library(tigris)
+library(sf)
+library(leaflet)
+library(mapview)
+
+Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
+
+ pums_2019_1yr <- getCensus(
+   name = "acs/acs1/pums",
+   vintage = 2019,
+   region = "public use microdata area:*",
+   regionin = "state:06",
+   vars = c(
+     "SERIALNO",
+     "SPORDER",
+     "PWGTP",
+     "WGTP",
+     "YBL",
+     "BLD",
+     "TEN",
+     "MV",
+     "HINCP",
+     "AGEP"
+   )
+ )
+ saveRDS(pums_2019_1yr, "a6_pums.rds")
+# pums_2019_1yr <- readRDS("a6_pums.rds")
+
+ca_pumas <-
+  pumas("CA", cb = T, progress_bar = F)
+
+sf_boundary <-
+  counties("CA", cb = T, progress_bar = F) %>%
+  filter(NAME == "San Francisco")
+
+sf_pumas <-
+  ca_pumas %>% 
+  st_centroid() %>% 
+  .[sf_boundary, ] %>% 
+  st_drop_geometry() %>% 
+  left_join(ca_pumas %>% select(GEOID10)) %>% 
+  st_as_sf()
+saveRDS(pums_2019_1yr,"a6_pums.rds")
+#pums_2019_1yr<-readRDS("a6_pums.rds")
+```
+three strange geographic anomalies are shown in the map:
+```{r}
+mapview(sf_pumas)
+
+```
